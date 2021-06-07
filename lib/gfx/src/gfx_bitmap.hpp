@@ -2,6 +2,7 @@
 #define HTCW_GFX_BITMAP
 #include "gfx_core.hpp"
 #include "gfx_pixel.hpp"
+#include "gfx_palette.hpp"
 #include "gfx_positioning.hpp"
 #include "gfx_draw_helpers.hpp"
 #include "gfx_palette.hpp"

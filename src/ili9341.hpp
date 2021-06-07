@@ -234,8 +234,9 @@ protected:
                         if(rr!=gfx::gfx_result::success)
                             return rr;
                         pixel_type p;
-                        if(!gfx::convert(pp,&p)) {
-                            return gfx::gfx_result::invalid_format;
+                        rr=gfx::convert(pp,&p);
+                        if(gfx::gfx_result::success!=rr) {
+                            return rr;
                         }
                         uint16_t pv = p.value();
                         if(!async)
