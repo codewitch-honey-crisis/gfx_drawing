@@ -1,0 +1,9 @@
+SPI Displays:
+CS 5
+CLK 18
+MOSI 23
+MISO 19
+
+DC 2
+RST 4
+BKL 15
