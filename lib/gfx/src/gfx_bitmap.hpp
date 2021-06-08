@@ -18,11 +18,10 @@ namespace gfx {
                 size_t dx,dxe = dstr.width();
                 gfx_result r;
                 helpers::suspender<Destination,Destination::caps::suspend,false> sustok(dst);
-                if(gfx_result::success!=r)
+                r = helpers::batcher<Destination,Destination::caps::batch,false>::begin_batch(dst,dstr,false);
+                if(gfx_result::success!=r) {
                     return r;
-                r = helpers::batcher<Destination,Destination::caps::batch,false>::begin_batch(dst,dstr);
-                if(gfx_result::success!=r)
-                    return r;
+                }
                 int sox = srcr.left(),soy=srcr.top();
                 int dox = dstr.left(),doy=dstr.top();
                 while(dy<dye) {
@@ -51,14 +50,14 @@ namespace gfx {
                             }
                              
                         }
-                        r = helpers::batcher<Destination,Destination::caps::batch,false>::write_batch(dst,point16(dox+dx,doy+dy),dpx);
+                        r = helpers::batcher<Destination,Destination::caps::batch,false>::write_batch(dst,point16(dox+dx,doy+dy),dpx,false);
                         if(gfx_result::success!=r)
                             return r;
                         ++dx;
                     }
                     ++dy;
                 }
-                return helpers::batcher<Destination,Destination::caps::batch,false>::commit_batch(dst);
+                return helpers::batcher<Destination,Destination::caps::batch,false>::commit_batch(dst,false);
                 
             }
         };
