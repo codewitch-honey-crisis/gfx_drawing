@@ -115,13 +115,20 @@ void app_main(void)
 
     // declare the frame buffer
     // all draw targets have a pixel_type member
-    using fb_pal_type = ega_palette<typename lcd_type::pixel_type>;
-    using fb_type = large_bitmap<indexed_pixel<4>,fb_pal_type>;
-    fb_pal_type pal;
-    fb_type fb(lcd.dimensions(),1,&pal);
+    
+    // CHOOSE:
 
-    //using fb_type = large_bitmap<typename lcd_type::pixel_type>;
-    //fb_type fb(lcd.dimensions(),1);
+    // Uncomment this to use a 16 color EGA palette
+    //using fb_pal_type = ega_palette<typename lcd_type::pixel_type>;
+    //using fb_type = large_bitmap<indexed_pixel<4>,fb_pal_type>;
+    //fb_pal_type pal;
+    //fb_type fb(lcd.dimensions(),1,&pal);
+
+    // Uncomment this to use the lcd's native pixel type
+    using fb_type = large_bitmap<typename lcd_type::pixel_type>;
+    fb_type fb(lcd.dimensions(),1);
+
+    // END CHOOSE
 
     while(true) {
         // draw a checkerboad pattern
@@ -156,7 +163,7 @@ void app_main(void)
             // set the alpha channel to a constrained value
             // so none are "too transparent"
             px.channel<channel_name::A>((256-192)+(rand()%192));
-            switch(i%5) {
+            switch(i%4) {
                 case 0:
                     draw::filled_rectangle(fb,srect16(rand()%lcd.width,rand()%lcd.height,rand()%lcd.width,rand()%lcd.height),px);
                     break;
@@ -169,10 +176,7 @@ void app_main(void)
                             rand()%lcd.dimensions().height),
                         px);
                     break;
-                case 2:
-                    draw::filled_rounded_rectangle(fb,srect16(rand()%lcd.width,rand()%lcd.height,rand()%lcd.width,rand()%lcd.height),(rand()%101)/100.0,px);
-                    break;
-                case 3: {
+                case 2: {
                         const float scalex = (rand()%101)/100.0;
                         const float scaley = (rand()%101)/100.0;
                         const uint16_t w = lcd.dimensions().width,
@@ -196,7 +200,7 @@ void app_main(void)
                         draw::filled_polygon(fb,poly_path,px);
                     }
                     break;
-                case 4:
+                case 3:
                     draw_happy_face(fb,(rand()%51)/100.0+.5,srect16(rand()%lcd.width,rand()%lcd.height,rand()%lcd.width,rand()%lcd.height).normalize());
                     break;
             }
