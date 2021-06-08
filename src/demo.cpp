@@ -115,8 +115,13 @@ void app_main(void)
 
     // declare the frame buffer
     // all draw targets have a pixel_type member
-    using fb_type = large_bitmap<typename lcd_type::pixel_type>;
-    fb_type fb(lcd.dimensions(),1);
+    using fb_pal_type = ega_palette<typename lcd_type::pixel_type>;
+    using fb_type = large_bitmap<indexed_pixel<4>,fb_pal_type>;
+    fb_pal_type pal;
+    fb_type fb(lcd.dimensions(),1,&pal);
+
+    //using fb_type = large_bitmap<typename lcd_type::pixel_type>;
+    //fb_type fb(lcd.dimensions(),1);
 
     while(true) {
         // draw a checkerboad pattern
