@@ -21,7 +21,7 @@ using namespace gfx;
 // the following is configured for the ESP-WROVER-KIT
 // make sure to set the pins to your set up.
 #if defined(ESP_WROVER_KIT)
-#define LCD_HOST    HSPI_HOST
+#define LCD_HOST    VSPI_HOST
 #define DMA_CHAN   2
 #define PIN_NUM_MISO GPIO_NUM_25
 #define PIN_NUM_MOSI GPIO_NUM_23
@@ -32,7 +32,7 @@ using namespace gfx;
 #define PIN_NUM_RST  GPIO_NUM_18
 #define PIN_NUM_BCKL GPIO_NUM_5
 #else
-#define LCD_HOST    HSPI_HOST
+#define LCD_HOST    VSPI_HOST
 #define DMA_CHAN    2
 #define PIN_NUM_MISO GPIO_NUM_19
 #define PIN_NUM_MOSI GPIO_NUM_23

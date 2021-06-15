@@ -112,62 +112,6 @@ namespace gfx {
             return gfx_result::success;
         }
     };
-    template<typename MappedPixelType> 
-    struct ega_palette {
-        static_assert(!MappedPixelType::template has_channel_names<channel_name::index>::value,"Mapped pixel must not be indexed");
-    private:
-        constexpr static gfx_result index_to_mapped(int idx,MappedPixelType* result) {
-            const uint8_t red   = 85 * (((idx >> 1) & 2) | ((idx >> 5) & 1));
-            const uint8_t green = 85 * (( idx       & 2) | ((idx >> 4) & 1));
-            const uint8_t blue  = 85 * (((idx << 1) & 2) | ((idx >> 3) & 1));
-            return convert(rgb_pixel<24>(red,green,blue),result);
-        }
-    public:
-        using type = ega_palette;
-        using pixel_type = indexed_pixel<4>;
-        using mapped_pixel_type = MappedPixelType;
-        constexpr static const bool writable = false;
-        constexpr static const size_t size = 16;
-        gfx_result map(pixel_type pixel,mapped_pixel_type* mapped_pixel) const {
-            return index_to_mapped(pixel.channel<channel_name::index>(),mapped_pixel);
-        }
-        gfx_result nearest(mapped_pixel_type mapped_pixel,pixel_type* pixel) const {
-            
-            if(nullptr==pixel) {
-                return gfx_result::invalid_argument;
-            }
-            mapped_pixel_type mpx;
-            gfx_result r = index_to_mapped(0,&mpx);
-            if(gfx_result::success!=r) {
-                return r;
-            }
-            double least = mpx.difference(mapped_pixel);
-            if(0.0==least) {
-                pixel->native_value = 0;
-                return gfx_result::success;
-            }
-            int ii=0;
-            for(int i = 1;i<size;++i) {
-                r=index_to_mapped(i,&mpx);
-                if(gfx_result::success!=r) {
-                    return r;
-                }
-                double cmp = mpx.difference(mapped_pixel);
-                if(0.0==cmp) {
-                    ii=i;
-                    least = 0.0;
-                    break;
-                }
-                if(cmp<least) {
-                    least = cmp;
-                    ii=i;
-                }
-            }
-            pixel->channel<channel_name::index>(ii);
-            //printf("nearest was %d\r\n",ii);
-            return gfx_result::success;
-        }
-    };
     template<typename Destination,typename Source>
     inline static gfx_result convert_palette(Destination& destination, const Source& source, typename Source::pixel_type pixel, typename Destination::pixel_type* result, const typename Destination::pixel_type* background=nullptr);
     template<typename Target,typename PixelType>
@@ -345,5 +289,65 @@ namespace gfx {
         //static_assert(!tshas_index::value,"PixelType must not be indexed");
         return helpers::palette_mapper<Target,PixelType>::pixel_to_indexed(target,pixel,result,background);
     }
+
+    template<typename MappedPixelType> 
+    struct ega_palette {
+        static_assert(!MappedPixelType::template has_channel_names<channel_name::index>::value,"Mapped pixel must not be indexed");
+    private:
+        constexpr static gfx_result index_to_mapped(int idx,MappedPixelType* result) {
+            const uint8_t red   = 85 * (((idx >> 1) & 2) | ((idx >> 5) & 1));
+            const uint8_t green = 85 * (( idx       & 2) | ((idx >> 4) & 1));
+            const uint8_t blue  = 85 * (((idx << 1) & 2) | ((idx >> 3) & 1));
+            return convert(rgb_pixel<24>(red,green,blue),result);
+        }
+    public:
+        using type = ega_palette;
+        using pixel_type = indexed_pixel<4>;
+        using mapped_pixel_type = MappedPixelType;
+        constexpr static const bool writable = false;
+        constexpr static const size_t size = 16;
+        gfx_result map(pixel_type pixel,mapped_pixel_type* mapped_pixel) const {
+            return index_to_mapped(pixel.channel<channel_name::index>(),mapped_pixel);
+        }
+        gfx_result nearest(mapped_pixel_type mapped_pixel,pixel_type* pixel) const {
+            
+            if(nullptr==pixel) {
+                return gfx_result::invalid_argument;
+            }
+            mapped_pixel_type mpx;
+            gfx_result r = index_to_mapped(0,&mpx);
+            if(gfx_result::success!=r) {
+                return r;
+            }
+            double least = mpx.difference(mapped_pixel);
+            if(0.0==least) {
+                pixel->native_value = 0;
+                return gfx_result::success;
+            }
+            int ii=0;
+            for(int i = 1;i<size;++i) {
+                r=index_to_mapped(i,&mpx);
+                if(gfx_result::success!=r) {
+                    return r;
+                }
+                double cmp = mpx.difference(mapped_pixel);
+                if(0.0==cmp) {
+                    ii=i;
+                    least = 0.0;
+                    break;
+                }
+                if(cmp<least) {
+                    least = cmp;
+                    ii=i;
+                }
+            }
+            pixel->channel<channel_name::index>(ii);
+            //printf("nearest was %d\r\n",ii);
+            return gfx_result::success;
+        }
+    };
+    
+    
+    
 }
 #endif

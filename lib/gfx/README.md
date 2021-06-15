@@ -52,8 +52,6 @@ I wanted a graphics library that was faster and better than what I had found for
 
 GFX on the other hand, isn't tied to anything. It can draw anywhere, on any platform. It's basically standard C++, and things like line drawing and font drawing algorithms. Without a driver, it can only draw to in memory bitmaps, but once you add a driver to the mix, you can draw directly onto displays the same way you do to bitmaps.
 
-`Disclaimer: `The documentation that ships with the downloaded code is always at least one iteration out of date compared to this article, and compared to what's on github. That shouldn't matter, since this article *is* the documentation so if you got it from here, you're hip to the latest. However, if this bugs you, get it from Github instead. Unfortunately, it's just a lot more work for me to sync everything back and then repackage and reupload to make it in sync.
-
 **Update:** Some minor bugfixes, SPI drivers are refactored to use a common base, more drivers are now added, and one click configuration for generic ESP32 boards is now available
 
 **Update 2:** Included support for the LilyGo TTGO board, as well as the green tab 128x128 1.44" ST7735 display (though other green tab models may work too they have not been tested)
@@ -81,6 +79,13 @@ GFX on the other hand, isn't tied to anything. It can draw anywhere, on any plat
 **Update 13:** Service release. Certain draw operations between certain draw targets would fail to compile
 
 **Update 14:** Added palette/CLUT support! (still a baby, not quite complete but I'll mature it as I go)
+
+**Update 15:** Service release. Fixed `large_bitmap<>` out of bounds crashing issue
+
+**Update 16:** Added Arduino framework support and several drivers. I have not tested the Arduino framework support with anything other than an ESP32, but it will not necessarily compile on all Arduinos. 
+
+**Update 17:** Added support for two e-ink/e-paper displays: the DEP0290B (and the associated LilyGo T5 2.2 board) as well as the GDEH0154Z90 (WaveShare 1.54 inch 3-color black/white/red display). The former only works on the Arduino Framework for now, until I hunt down the issue under the ESP-IDF that prevents it from working.
+
 
 Concepts
 --------
@@ -147,7 +152,7 @@ Draw sources again, are things like bitmaps, or display drivers that support rea
 
 #### Fonts
 
-Fonts can be included as legacy *.FON* files like those used in Windows 3.1. The file format is low overhead, and designed for 16 bit systems, so the fonts are very simple and compact, while supporting relatively rich features for an IoT device, like variable width fonts. When loading a font this way, it will be allocated on the heap.
+Fonts can be included as legacy *.FON* files like those used in Windows 3.1. The file format is low overhead, and designed for 16 bit systems, so the fonts are very simple and compact, while supporting relatively rich features for an IoT device, like variable width fonts. When loading a font this way, it will be allocated on the heap. Note that you cannot currently load fonts this way under the Arduino framework.
 
 Alternatively, you can use the *fontgen* to create a C++ header file from a font file. This header can then be included in order to embed the font data directly into your binary. This is a static resource rather than loaded into the heap.
 
@@ -193,6 +198,16 @@ Typically in order to facilitate this, you'll create two largeish bitmaps (say, 
 
 Drawing bitmaps asynchronously is really the only time you're going to see throughput improvements. The reason there are other asynchronous API calls as well is usually in order to switch from asynchronous to synchronous operations all the pending asynchronous operations in the target's queue have to complete, so basically after you queue your bitmap to draw, you can continue to queue asynchronous line draws and such in order to avoid having to wait for the pending operations to complete. However, when you're using the flipping bitmaps method above to do your asynchronous processing, these other asynchronous methods won't be necessary, since drawing to bitmaps is always synchronous, and has nothing to do with bus traffic or queuing asynchronous bus transactions. Drawing synchronously to bitmaps does not affect the asynchronous queue of the draw target. Each asynchronous queue is specific to the draw source or destination in question.
 
+#### Performance Differences By Framework
+
+##### ESP-IDF
+
+The ESP-IDF is capable of doing asynchronous DMA transfers over SPI, but right now the overall SPI throughput is less than the Arduino framework. I'm investigating why this is. I have related issues that are preventing me from supporting certain devices under the ESP-IDF, like the RA8875.
+
+##### Arduino Framework
+
+The Arduino Framework's SPI interop is tightly timed and fast, but doesn't support asynchronous DMA transfers - at least not explicitly - and doesn't seem to have a facility for returning errors during SPI read and write operations. Therefore I think it's less likely for wiring problems to be reported with the Arduino versions of the drivers, but I'm not exactly sure since I haven't tried to create such a scenario to test with. The Arduino framework is more likely to support a device than the ESP-IDF due to differences in the SPI communication API characteristics and behavior. `XXXX_async` methods will always be performed synchronously with the Arduino framework.
+
 Using the GFX API
 -----------------
 
@@ -234,11 +249,13 @@ Beyond that, you can also declare fonts, and bitmaps. These use resources while 
 
 Images do not use resources directly except for some bookkeeping during loading. They are not loaded into memory and held around, but rather the caller is called back with small bitmaps that contain portions of the image which can then be drawn to any draw destination, like a display or another bitmap. This progressive loading is necessary since realistically, most machines GFX is designed for do not have the RAM to load a real world image all at once.
 
+### Some Basics
+
 Let's dive into some code. The following draws a classic effect around the four edges of the screen in four different colors, with "ESP32 GFX Demo" in the center of the screen:
 
 C++
 
-``` {#pre33367 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre868873 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 draw::filled_rectangle(lcd,(srect16)lcd.bounds(),lcd_color::white);
 const font& f = Bm437_ATI_9x16_FON;
 const char* text = "ESP32 GFX Demo";
@@ -274,11 +291,13 @@ After that, we draw 396 lines in total, around the edges of the display, such as
 
 Compare the performance of line drawing with GFX to other libraries. You'll be pleasantly surprised. The further from 45 degrees (or otherwise perfectly diagonal) a line is, the faster it draws - at least on most devices - with horizontal and vertical lines being the fastest.
 
+#### Double Buffering, Suspend and Resume
+
 Let's try it again - or at least something similar - this time using double buffering on a supporting target, like an SSD1306 display. Note that `suspend<>()` and `resume<>()` can be called regardless of the draw destination, but they will report `gfx::gfx_result::not_supported` on targets that are not double buffered:
 
 C++
 
-``` {#pre522822 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre51891 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 draw::filled_rectangle(lcd,(srect16)lcd.bounds(),lcd_color::black);
 const font& f = Bm437_Acer_VGA_8x8_FON;
 const char* text = "ESP32 GFX";
@@ -309,11 +328,17 @@ for(int i = 1;i<100;i+=10) {
 
 Other than some minor differences, mostly because we're working with a much smaller display that is monochrome, it's the same code as before with one major difference - the presence of `suspend<>()` and `resume<>()` calls. Once suspend is called, further draws aren't displayed until resume is called. The calls should balance, such that to resume a display you must call resume the same number of times that you call suspend. This allows you to have subroutines which suspend and resume their own draws without messing up your code. GFX in fact, uses suspend and resume on supporting devices as it draws individual elements. The main reason you have it is so you can extend the scope across several drawing operations.
 
+##### A Note About Suspend/Resume and E-Ink/E-Paper Displays
+
+The refresh rate of this class of displays is extremely slow. However, GFX does not distinguish between e-paper displays and traditional TFT/LCD/OLED displays in terms of how it uses them. Therefore, in order to achieve reasonable performance, it's important to suspend and resume entire frames at a time. Animation is out of the question for these displays. Some of these displays support partial updating which in theory will improve their refresh rates. However, the displays are not well documented and I haven't been successful in getting that to work yet.
+
+### Let's Do Polygons
+
 Since adding polygon support, I suppose an example of that will be helpful. Here it is in practice:
 
 C++
 
-``` {#pre478921 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre508960 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 // draw a polygon (a triangle in this case)
 // find the origin:
 const spoint16 porg = srect16(0,0,31,31)
@@ -338,7 +363,7 @@ You can define pixels by using the `pixel<>` template, which takes one or more `
 
 C++
 
-``` {#pre557908 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre158835 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 // declare a 16-bit RGB pixel
 using rgb565 = pixel<channel_traits<channel_name::R,5>,
                     channel_traits<channel_name::G,6>,
@@ -349,7 +374,7 @@ That declares a pixel with 3 channels, each of `uint8_t`: `R:5`, `G:6`, and `B:5
 
 C++
 
-``` {#pre173203 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre142040 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 using rgb565 = rgb_pixel<16>; // declare a 16-bit RGB pixel
 ```
 
@@ -365,7 +390,7 @@ Each pixel is composed of the channels you declared, and the channels may be acc
 
 C++
 
-``` {#pre934892 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre86542 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 // declare a 24-bit rgb pixel
 rgb_pixel<24> rgb888;
 
@@ -399,7 +424,7 @@ Here's an example of using it in the wild:
 
 C++
 
-``` {#pre85927 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre848681 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 using bmpa_type = rgba_pixel<32>;
 using bmpa_color = color<bmpa_type>;
 
@@ -478,7 +503,7 @@ Anyway, first we have to declare our buffer. I was very careful to make my objec
 
 C++
 
-``` {#pre918025 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre125191 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 using bmp_type = bitmap<rgb_pixel<16>>;
 // the following is for convenience:
 using bmp_color = color<typename bmp_type::pixel_type>; // needs GFX color header
@@ -488,7 +513,7 @@ followed by:
 
 C++
 
-``` {#pre87093 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre607634 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 constexpr static const size16 bmp_size(16,16);
 uint8_t bmp_buf[bmp_type::sizeof_buffer(bmp_size)];
 ```
@@ -499,7 +524,7 @@ Now that we have all that, wrapping it with a bitmap is trivial:
 
 C++
 
-``` {#pre934261 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre420123 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 bmp_type bmp(bmp_size,bmp_buf);
 // you'll probably want to do this, but not necessary if 
 // you're redrawing the entire bmp anyway:
@@ -510,7 +535,7 @@ Now you can call `draw` methods passing `bmp` as the destination:
 
 C++
 
-``` {#pre991654 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre995390 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
  // draw a happy face
 
 // bounding info for the face
@@ -572,7 +597,7 @@ The code looks approximately like this under the ESP-IDF at least:
 
 C++
 
-``` {#pre594339 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre766469 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 uint16_t *lines[2];
 //Allocate memory for the pixel buffers
 for (int i=0; i<2; i++) {
@@ -636,7 +661,7 @@ Below `lcd` represents our target on which to draw the image:
 
 C++
 
-``` {#pre859269 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre357900 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 file_stream fs("/spiffs/image.jpg");
 // TODO: check caps().read to see if the file is opened/readable
 draw::image(lcd,(srect16)lcd.bounds(),&fs,rect16(0,0,-1,-1));
@@ -648,7 +673,7 @@ The second way of loading an image is passing the stream to an image loader func
 
 C++
 
-``` {#pre825103 .lang-cplusplus style="margin-top:0;" data-language="C++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre226263 .lang-cplusplus style="margin-top:0;" data-language="C++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 file_stream fs("/spiffs/image.jpg");
 // TODO: check caps().read to see if the file is opened/readable
 jpeg_image::load(&fs,[](size16 dimensions,
@@ -678,7 +703,7 @@ First, generate a header file from a font file using fontgen under the *tools* f
 
 C++
 
-``` {#pre846487 .lang-cplusplus style="margin-top:0;" data-language="C++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre607685 .lang-cplusplus style="margin-top:0;" data-language="C++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 ~$ fontgen myfont.fon > myfont.hpp
 ```
 
@@ -686,7 +711,7 @@ Now you can include that in your code:
 
 C++
 
-``` {#pre42480 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre649272 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 #include "myfont.hpp"
 ```
 
@@ -694,7 +719,7 @@ This allows you to reference the font like this:
 
 C++
 
-``` {#pre409214 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre346056 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 const font& f = myfont_fon;
 const char* text = "Hello world!";
 srect16 text_rect = f.measure_text((ssize16)lcd.dimensions(),
@@ -706,11 +731,11 @@ draw::text(lcd,
         lcd_color::white);
 ```
 
-The second way to access a font is by loading a *.FON* file from a stream, which stores the font around on the heap rather than embedded as a `static` `const` array in your code, just replace the first line of code above with this:
+The second way to access a font is by loading a *.FON* file from a stream, which stores the font around on the heap rather than embedded as a `static` `const` array in your code is to just replace the first line of code above with this:
 
 C++
 
-``` {#pre679737 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
+``` {#pre438618 .lang-cplusplus style="margin-top:0;" data-language="c++" data-collapse="False" data-linecount="False" data-allow-shrink="True"}
 file_stream fs("/spiffs/myfon.fon");
 if(!fs.caps().read) {
     printf("Font file not found.\r\n");
@@ -719,7 +744,7 @@ if(!fs.caps().read) {
 font f(&fs);
 ```
 
-That will create a font on the heap from the given file. You can then go on to draw it like normal. When it goes out of scope, the heap it used is reclaimed.
+That will create a font on the heap from the given file. You can then go on to draw it like normal. When it goes out of scope, the heap it used is reclaimed. Note that this method of loading fonts does not currently work under the Arduino framework. They must be embedded.
 
 It is usually more efficient to draw fonts with a solid background than ones with a transparent background, so if raw performance is your ultimate goal, stick with non-transparent font draws.
 
@@ -744,19 +769,27 @@ Next, you have to declare the `using pixel_type` alias on your draw target. This
 
 -   `pixel_type` - indicates the native pixel format for this target
 
+If your pixel type is indexed, meaning it contains `channel_name::index`, you must include using `palette_type` alias for your palette type. For drivers like e-paper displays, they will usually have an associated palette class that this aliases.
+
+-   `palette_type` - indicates the associated palette type if `pixel_type` refers to an indexed pixel.
+
 Now you can start implementing methods you'll need. Most of the methods return the `enum` `gfx::gfx_result` indicating the status of the operation.
 
 First, aside from the `caps` and `pixel_type` aliases, there are methods you must implement regardless:
 
--   `dimensions()` - returns a `size16` that indicates the dimensions of the draw target.
--   `bounds()` - returns a `rect16` with a top left corner of (0,0) and a width and height equal to that of the draw target. This is an alias for `dimensions().bounds()`.
+-   `size16 dimensions() const` - returns a `size16` that indicates the dimensions of the draw target.
+-   `rect16 bounds() const` - returns a `rect16` with a top left corner of (0,0) and a width and height equal to that of the draw target. This is an alias for `dimensions().bounds()`.
+
+Next, if your `pixel_type` refers to an indexed pixel you must implement a `palette()` method which returns a pointer to a palette associated with your draw target.
+
+-   `const palette_type* palette() const` - returns a pointer to the palette associated with this draw target
 
 #### Draw Source Members
 
 To implement a target as a draw source, you must additionally implement one, or possibly two methods:
 
--   `gfx_result point(point16 location, pixel_type* out_color)` - retrieves a pixel at the specified location
--   `gfx_result copy_to<typename Destination>(const rect16& src_rect,Destination& dst,point16 location)` - copies a portion of the target to the specified destination at the specified location
+-   `gfx_result point(point16 location, pixel_type* out_color) const` - retrieves a pixel at the specified location
+-   `gfx_result copy_to<typename Destination>(const rect16& src_rect,Destination& dst,point16 location) const` - copies a portion of the target to the specified destination at the specified location
 
 If you implement `copy_to<>()` be sure to set the corresponding entry in your `caps` so that GFX will call it.
 
@@ -795,11 +828,6 @@ If you support suspend/resume (double buffering) you'll need to implement the fo
 
 Finally, every one of the writing methods potentially has an `_async()` counterpart that take the same parameters but queue the operation and return as soon as possible. There is currently no provision for doing async reads but that will change in the future.
 
-Where to Go From Here
----------------------
-
-The demo projects that ship with this should provide you ample code to learn GFX or even build your own drivers. Currently, I'm focused on supporting the ESP32 via the ESP-IDF, but GFX itself is not limited by platform, and drivers can be written for anything - even DirectX on a Windows PC.
-
 History
 -------
 
@@ -818,4 +846,6 @@ History
 -   5<sup>th</sup> June, 2021 - Added single header file, and easier to use image loading. cleaned up positioning api a bit. bugfix in declarions of clipping rect parameters on `draw::`
 -   7<sup>th</sup> June, 2021 - Service release. Certain draw operations between certain draw targets would fail to compile
 -   8<sup>th</sup> June, 2021 - Added palette/CLUT support (initial/experimental)
-
+-   8<sup>th</sup> June, 2021 - Service release. Fixed `large_bitmap<>` out of bounds crashing issue
+-   13<sup>th</sup> June, 2021 - Added Arduino framework support and several Arduino based drivers
+-   15<sup>th</sup> June, 2021 - Added support for two e-ink/e-paper displays: the DEP0290B (and the associated LilyGo T5 2.2 board) as well as the GDEH0154Z90 (WaveShare 1.54 inch 3-color black/white/red display).
